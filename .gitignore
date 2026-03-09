@@ -7,3 +7,6 @@ coverage/
 !logs/sample.log
 public/assets/
 public/index.html
+/.claude
+CLAUDE.md
+.DS_Store
