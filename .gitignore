@@ -1,0 +1,9 @@
+INTERVIEW.md
+node_modules/
+dist/
+coverage/
+.env
+*.log
+!logs/sample.log
+public/assets/
+public/index.html

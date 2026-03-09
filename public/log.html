@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Log Watcher</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #0d1117;
+      color: #c9d1d9;
+      font-family: 'Menlo', 'Consolas', 'Monaco', monospace;
+      font-size: 13px;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 16px;
+      background: #161b22;
+      border-bottom: 1px solid #30363d;
+      flex-shrink: 0;
+    }
+
+    header h1 {
+      font-size: 14px;
+      font-weight: 600;
+      color: #e6edf3;
+      letter-spacing: 0.02em;
+    }
+
+    #status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #3fb950;
+      transition: background 0.3s;
+    }
+
+    #status-dot.connecting { background: #d29922; }
+    #status-dot.error      { background: #f85149; }
+
+    #status-text {
+      font-size: 11px;
+      color: #8b949e;
+      margin-left: auto;
+    }
+
+    #log-container {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px 0;
+      scroll-behavior: smooth;
+    }
+
+    .log-line {
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+      padding: 1px 16px;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    .log-line:hover { background: #161b22; }
+
+    .log-line.new {
+      animation: highlight 1.2s ease-out forwards;
+    }
+
+    @keyframes highlight {
+      from { background: #1f3a1f; }
+      to   { background: transparent; }
+    }
+
+    .line-num {
+      color: #484f58;
+      min-width: 48px;
+      text-align: right;
+      user-select: none;
+      flex-shrink: 0;
+    }
+
+    .line-text { color: #c9d1d9; flex: 1; }
+
+    #error-banner {
+      display: none;
+      padding: 10px 16px;
+      background: #3d1c1c;
+      border-top: 1px solid #f85149;
+      color: #f85149;
+      font-size: 12px;
+      flex-shrink: 0;
+    }
+
+    footer {
+      padding: 6px 16px;
+      background: #161b22;
+      border-top: 1px solid #30363d;
+      font-size: 11px;
+      color: #484f58;
+      flex-shrink: 0;
+      display: flex;
+      justify-content: space-between;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div id="status-dot" class="connecting"></div>
+    <h1>Log Watcher</h1>
+    <span id="status-text">Connecting…</span>
+  </header>
+
+  <div id="log-container"></div>
+
+  <div id="error-banner"></div>
+
+  <footer>
+    <span id="line-count">0 lines</span>
+    <span id="file-path"></span>
+  </footer>
+
+  <script>
+    const container  = document.getElementById('log-container');
+    const dot        = document.getElementById('status-dot');
+    const statusText = document.getElementById('status-text');
+    const errorBanner = document.getElementById('error-banner');
+    const lineCountEl = document.getElementById('line-count');
+
+    let lineCount = 0;
+    // Track whether the user has scrolled up manually
+    let userScrolledUp = false;
+
+    container.addEventListener('scroll', () => {
+      const atBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 40;
+      userScrolledUp = !atBottom;
+    });
+
+    function scrollToBottom() {
+      if (!userScrolledUp) {
+        container.scrollTop = container.scrollHeight;
+      }
+    }
+
+    function setStatus(state, text) {
+      dot.className = state === 'connected' ? '' : state;
+      dot.style.background = state === 'connected' ? '#3fb950'
+                           : state === 'connecting' ? '#d29922'
+                           : '#f85149';
+      statusText.textContent = text;
+    }
+
+    function appendLine(text, isNew = false) {
+      lineCount++;
+      const row = document.createElement('div');
+      row.className = 'log-line' + (isNew ? ' new' : '');
+
+      const num = document.createElement('span');
+      num.className = 'line-num';
+      num.textContent = lineCount;
+
+      const content = document.createElement('span');
+      content.className = 'line-text';
+      content.textContent = text;
+
+      row.appendChild(num);
+      row.appendChild(content);
+      container.appendChild(row);
+      lineCountEl.textContent = `${lineCount} line${lineCount === 1 ? '' : 's'}`;
+      scrollToBottom();
+    }
+
+    function showError(message) {
+      errorBanner.style.display = 'block';
+      errorBanner.textContent = `Error: ${message}`;
+      setStatus('error', 'Disconnected');
+    }
+
+    function connect() {
+      setStatus('connecting', 'Connecting…');
+
+      const es = new EventSource('/stream');
+
+      es.addEventListener('snapshot', (e) => {
+        const { lines } = JSON.parse(e.data);
+        // Clear any previous content (e.g. on reconnect)
+        container.innerHTML = '';
+        lineCount = 0;
+        lines.forEach(line => appendLine(line, false));
+        setStatus('connected', 'Live');
+        scrollToBottom();
+      });
+
+      // Default 'message' events carry individual new lines
+      es.onmessage = (e) => {
+        const { line } = JSON.parse(e.data);
+        appendLine(line, true);
+      };
+
+      es.addEventListener('error', (e) => {
+        // SSE 'error' event with data = server-sent error message
+        if (e.data) {
+          try {
+            const { error } = JSON.parse(e.data);
+            showError(error);
+          } catch {
+            showError('Unknown error from server.');
+          }
+          es.close();
+          return;
+        }
+
+        // Network-level disconnect — browser will auto-reconnect
+        if (es.readyState === EventSource.CONNECTING) {
+          setStatus('connecting', 'Reconnecting…');
+        } else {
+          setStatus('error', 'Disconnected — retrying…');
+        }
+      });
+    }
+
+    connect();
+  </script>
+</body>
+</html>
