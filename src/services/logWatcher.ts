@@ -18,18 +18,20 @@ import { EventEmitter } from 'events';
 import { readFrom, statFile } from './fileReader';
 import { logger } from '../utils/logger';
 
-export interface LogWatcherEvents {
-  line: (line: string) => void;
-  error: (message: string) => void;
-}
-
-// Typed EventEmitter shim
-export interface LogWatcher {
-  on<K extends keyof LogWatcherEvents>(event: K, listener: LogWatcherEvents[K]): this;
-  emit<K extends keyof LogWatcherEvents>(event: K, ...args: Parameters<LogWatcherEvents[K]>): boolean;
-}
-
 export class LogWatcher extends EventEmitter {
+  on(event: 'line', listener: (line: string) => void): this;
+  on(event: 'error', listener: (message: string) => void): this;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  on(event: string | symbol, listener: (...args: any[]) => void): this {
+    return super.on(event, listener);
+  }
+
+  emit(event: 'line', line: string): boolean;
+  emit(event: 'error', message: string): boolean;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  emit(event: string | symbol, ...args: any[]): boolean {
+    return super.emit(event, ...args);
+  }
   private readonly filePath: string;
   private readonly pollIntervalMs: number;
 
