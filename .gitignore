@@ -10,3 +10,4 @@ public/index.html
 /.claude
 CLAUDE.md
 .DS_Store
+logs/sample.log
